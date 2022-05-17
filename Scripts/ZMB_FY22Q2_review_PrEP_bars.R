@@ -117,7 +117,7 @@ source <- source_info(file_genie)
    scale_fill_identity()+
    si_style_xgrid(facet_space = 0.75) +
    labs(x = NULL, y = NULL,
-      title = glue("ACTION HIV HAS ACHIEVED THEIR FY22 TARGETS FOR MALES AS OF {pd}"),
+      title = glue("PrEP_CURR: ACTION HIV HAS ACHIEVED THEIR FY22 TARGETS FOR MALES AS OF {pd}"),
         caption = glue("Source: {source}")) +
    scale_x_continuous(labels = comma) +
    coord_cartesian(clip = "off", expand = FALSE) 
