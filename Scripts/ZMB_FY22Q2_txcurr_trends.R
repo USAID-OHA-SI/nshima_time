@@ -25,7 +25,7 @@ library(lubridate)
 
 # GLOBAL VARIABLES --------------------------------------------------------
 
-genie_path <- file.path(si_path(), "Genie-PSNUByIMs-Zambia-Daily-2022-05-16_ALL.zip")
+genie_path <- file.path(si_path(), "Genie/Genie-PSNUByIMs-Zambia-Daily-2022-05-16.zip")
 
 msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
@@ -62,13 +62,13 @@ df_tx <- df %>%
   filter(funding_agency == "USAID",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus") %>% 
-  group_by(indicator, fiscal_year, trendscoarse) %>% 
+  group_by(indicator, fiscal_year, trendscoarse, snu1) %>% 
   summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
   reshape_msd("quarters") %>% 
   select(-results_cumulative)
 
 df_tx <- df_tx %>% 
-  #group_by(snu1) %>%
+  group_by(snu1) %>%
   mutate(decline = results < lag(results, 1),
          decline_shp = ifelse(decline == TRUE, "\u25Bc", "\u25B2"),
          fill_color = case_when(fiscal_year < curr_fy ~ trolley_grey,
@@ -78,7 +78,7 @@ df_tx <- df_tx %>%
          results_latest = case_when(period == max(period) ~ results),
          decline_latest = case_when(period == max(period) ~ decline_shp)) %>% 
   fill(results_latest,decline_latest, .direction = "up") %>% 
-  #mutate(disp_name = glue("{snu1} {decline_latest}")) %>% 
+  mutate(disp_name = glue("{snu1} {decline_latest}")) %>% 
   ungroup() 
 
 v_tx_lrg <- df_tx %>% 
@@ -546,23 +546,25 @@ df_iit_copperbelt %>%
     mutate(tx_curr_pct = 1) %>% 
     ggplot(aes(tx_curr_pct, ageasentered)) +
     geom_vline(data = df_avg, aes(xintercept = avg_vlc, color = grey80k)) +
-    geom_col(fill = "#E5E5E5", alpha = 0.6) +
-    geom_col(aes(vlc), fill = scooter_light, alpha = 0.6) +
-    geom_col(aes(vls_adj), fill = scooter, alpha = 0.6) +
+    geom_col(fill = grey10k, alpha = 0.6) +
+    geom_col(aes(vls), fill = scooter_light, alpha = 0.75, width = 0.75) +
+    geom_col(aes(vlc), fill = scooter, alpha = 1, width = 0.75) +
+    geom_vline(xintercept = 1, size = 0.5, color = grey30k) +
+    geom_vline(xintercept = 0, size = 0.5, color = grey30k) +
     # geom_richtext(aes(label = glue("<span style='color:#2166ac'>{percent(vls_adj, 1)}</span> | <span style='color:#67a9cf'>{percent(vlc, 1)}</span>")), 
     #               label.color = NA,
     #           nudge_x = .2,
     #           family = "Source Sans Pro") +
-    geom_richtext(aes(vls_adj, label = glue("<span style='color:white'>{percent(vls_adj, 1)}</span>")), 
+    geom_richtext(aes(vls, label = glue("<span style='color:#505050'>{percent(vls, 1)}</span>")), 
                   label.color = NA, fill = NA,
-                  nudge_x = -.06, size = 3,
+                  nudge_x = -0.04, size = 3,
                   family = "Source Sans Pro") +
-    geom_richtext(aes(vlc, label = glue("<span style='color:#505050'>{percent(vlc, 1)}</span>")), 
+    geom_richtext(aes(vlc, label = glue("<span style='color:white'>{percent(vlc, 1)}</span>")), 
                   label.color = NA, fill = NA,
-                  nudge_x = .06, size = 3,
+                  nudge_x = -0.04, size = 3,
                   family = "Source Sans Pro") +
     geom_text(data = df_avg, aes(x = avg_vlc, y = avg_vlc, label = percent(avg_vlc, 1)),
-              hjust = .3, vjust = 1.5,
+              hjust = .3, vjust = 1.6,
               family = "Source Sans Pro",
               color = grey90k, size = 10/.pt) +
     facet_wrap(~fct_reorder(snu1, tx_curr_lag2, sum, na.rm = TRUE,.desc = TRUE)) +
@@ -571,16 +573,16 @@ df_iit_copperbelt %>%
     scale_color_identity() +
     scale_x_continuous(label = percent) +
     labs(x = NULL, y = NULL, 
-         title = glue("In {curr_pd}, USAID VLS and VLC remains low at only {percent(df_usaid_vl$vls_adj, 1)} and {percent(df_usaid_vl$vlc, 1)} respectively") %>% toupper,
-         subtitle = glue("<span style='color:{scooter_light}'>VLC</span> and <span style='color:{scooter}'>VLS</span> rates out of patients on TX_CURR 2 periods prior | Largest {length(v_tx_lrg)} TX_CURR regions"),
+         title = glue("In {curr_pd}, USAID VLC and VLS are at {percent(df_usaid_vl$vlc, 1)} and {percent(df_usaid_vl$vls, 1)} respectively") %>% toupper,
+         subtitle = glue("<span style='color:{scooter}'>**VLC**</span> and <span style='color:{scooter_light}'>**VLS**</span> rates | Largest {length(v_tx_lrg)} TX_CURR regions"),
          caption = glue("Source: {msd_source}")) +
     si_style_nolines() +
     theme(panel.spacing = unit(.5, "line"),
           plot.subtitle = element_markdown(),
           strip.text = element_markdown(),
-          axis.text.x = element_blank())
+          axis.text.x = element_blank()) 
   
-  si_save(glue("Graphics/{curr_pd}_ZMB_region_vl.svg"))
-  si_save(glue("Images/{curr_pd}_ZMB_region_vl.png"))
+  si_save(glue("Graphics/{curr_pd}_ZMB_region_vl.svg"), scale = 1.25)
+  si_save(glue("Images/{curr_pd}_ZMB_region_vl.png"), scale = 1.25)
   
   
