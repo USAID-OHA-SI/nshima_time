@@ -25,7 +25,7 @@ library(lubridate)
 
 # GLOBAL VARIABLES --------------------------------------------------------
 
-genie_path <- file.path(si_path(), "Genie/Genie-PSNUByIMs-Zambia-Daily-2022-05-16.zip")
+genie_path <- file.path(si_path(), "Genie-PSNUByIMs-Zambia-Daily-2022-05-16_ALL.zip")
 
 msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
@@ -62,13 +62,13 @@ df_tx <- df %>%
   filter(funding_agency == "USAID",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus") %>% 
-  group_by(indicator, fiscal_year, trendscoarse, snu1) %>% 
+  group_by(indicator, fiscal_year, trendscoarse) %>% 
   summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
   reshape_msd("quarters") %>% 
   select(-results_cumulative)
 
 df_tx <- df_tx %>% 
-  group_by(snu1) %>%
+  #group_by(snu1) %>%
   mutate(decline = results < lag(results, 1),
          decline_shp = ifelse(decline == TRUE, "\u25Bc", "\u25B2"),
          fill_color = case_when(fiscal_year < curr_fy ~ trolley_grey,
@@ -78,7 +78,7 @@ df_tx <- df_tx %>%
          results_latest = case_when(period == max(period) ~ results),
          decline_latest = case_when(period == max(period) ~ decline_shp)) %>% 
   fill(results_latest,decline_latest, .direction = "up") %>% 
-  mutate(disp_name = glue("{snu1} {decline_latest}")) %>% 
+  #mutate(disp_name = glue("{snu1} {decline_latest}")) %>% 
   ungroup() 
 
 v_tx_lrg <- df_tx %>% 
@@ -122,6 +122,7 @@ df_tx <- df %>%
   filter(funding_agency == "USAID",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus") %>% 
+  
   group_by(snu1, indicator, fiscal_year, trendscoarse) %>% 
   summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
   reshape_msd("quarters") %>% 
@@ -209,7 +210,7 @@ df_tx <- df_tx %>%
   mutate(disp_name = glue("{mech_code} - {mech_name} {decline_latest}")) %>% 
   ungroup() 
 
-v_tx_lrg <- df_tx %>% 
+v_tx_lrg_partner <- df_tx %>% 
   filter(period == max(period),
          trendscoarse == "<15") %>% 
   arrange(desc(results)) %>% 
@@ -218,7 +219,7 @@ v_tx_lrg <- df_tx %>%
   pull(mech_code)
 
 df_tx %>%
-  filter(mech_code %in% v_tx_lrg,
+  filter(mech_code %in% v_tx_lrg_partner,
          trendscoarse == "<15") %>% 
   ggplot(aes(period, results, fill = fill_color, alpha = fill_alpha)) +
   geom_col() +
@@ -242,67 +243,6 @@ df_tx %>%
         strip.text = element_markdown())
 
 si_save(glue("Images/{curr_pd}_ZAM_partner_txcurr_peds.png"))
-
-
-
-# AYP -----------------------------------------------------
-
-# df_tx <- df %>% 
-#   filter(funding_agency == "USAID",
-#          indicator == "TX_CURR",
-#          standardizeddisaggregate == "Age/Sex/HIVStatus",
-#          ageasentered == c("15-19", "20-24")) %>% 
-#   group_by(indicator, fiscal_year, ageasentered) %>% 
-#   summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
-#   reshape_msd("quarters") %>% 
-#   select(-results_cumulative)
-# 
-# df_tx <- df_tx %>% 
-#   #group_by(snu1) %>%
-#   mutate(decline = results < lag(results, 1),
-#          decline_shp = ifelse(decline == TRUE, "\u25Bc", "\u25B2"),
-#          fill_color = case_when(fiscal_year < curr_fy ~ trolley_grey,
-#                                 decline == TRUE ~ golden_sand,
-#                                 TRUE ~ scooter),
-#          fill_alpha = ifelse(fiscal_year < curr_fy, .6, .9),
-#          results_latest = case_when(period == max(period) ~ results),
-#          decline_latest = case_when(period == max(period) ~ decline_shp)) %>% 
-#   fill(results_latest,decline_latest, .direction = "up") %>% 
-#   #mutate(disp_name = glue("{snu1} {decline_latest}")) %>% 
-#   ungroup() 
-# 
-# v_tx_lrg <- df_tx %>% 
-#   filter(period == max(period),
-#          trendscoarse == "<15") %>% 
-#   arrange(desc(results)) %>% 
-#   mutate(cumsum = cumsum(results)/sum(results)) %>% 
-#   slice_head(n = 11) %>% 
-#   pull(snu1)
-# 
-# df_tx %>%
-#   filter(
-#     #snu1 %in% v_tx_lrg,
-#     trendscoarse == "<15") %>% 
-#   ggplot(aes(period, results, fill = fill_color, alpha = fill_alpha)) +
-#   geom_col() +
-#   geom_text(data = . %>% filter(period == max(period)), 
-#             aes(label = label_number_si()(results_latest)), 
-#             vjust = -.7, color = matterhorn,
-#             family = "Source Sans Pro") +
-#   #facet_wrap(~fct_reorder2(disp_name, period, results), scales = "free_y") +
-#   scale_fill_identity() +
-#   scale_alpha_identity() +
-#   scale_y_continuous(label = label_number_si()) +
-#   scale_x_discrete(labels = pd_brks) +
-#   coord_cartesian(expand = T, clip = "off") +
-#   labs(x = NULL, y = NULL, 
-#        title = "DECLINES IN PEDIATRIC TX_CURR REVERSED COURSE IN FY22Q2 IN MANY REGIONS",
-#        subtitle = glue("TX_CURR<15 trends in largest {length(v_tx_lrg)} regions | FY22 flagged <span style='color:{golden_sand}'>decline</span>/<span style='color:{scooter}'>growth</span>"),
-#        caption = glue("Source: {msd_source}")) +
-#   si_style_ygrid() +
-#   theme(panel.spacing = unit(.5, "line"),
-#         plot.subtitle = element_markdown(),
-#         strip.text = element_markdown())
 
 # IIT ---------------------------------------------------------------------
 
@@ -355,7 +295,7 @@ df_iit %>%
 si_save(glue("Images/{curr_pd}_ZMB_region_iit_peds.png"))
 
 
-# COPPERBELT -----
+# COPPERBELT -------------------
 
 df_iit_copperbelt <- df_site %>% 
   filter(funding_agency == "USAID",
@@ -381,7 +321,7 @@ adult_large_iit <- df_iit_copperbelt %>%
          tx_curr_lag1 != 0,
          trendscoarse == "15+",
          period == max(period),
-         iit > 0.25) %>% view()
+         iit > 0.25) %>% distinct(facilityuid) %>% 
   pull()
   
 df_iit_copperbelt %>% 
@@ -422,9 +362,9 @@ df_iit_copperbelt %>%
   peds_large_iit <- df_iit_copperbelt %>% 
     filter(mech_code != 82086,
            tx_curr_lag1 != 0,
-           #trendscoarse == "<15",
+           trendscoarse == "<15",
            period == max(period),
-           iit > 0.25) %>% 
+           iit > 0.25) %>% distinct(facilityuid) %>% 
     pull()
   
   df_iit_copperbelt %>% 
@@ -533,7 +473,7 @@ df_iit_copperbelt %>%
               avg_vls = mean(vls),
               avg_vls_adj = mean(vls_adj)) %>% 
     ungroup()
-    
+  
   
   df_usaid_vl <- df_vl %>% 
     summarise(vlc = sum(tx_pvls_d, na.rm = TRUE)/sum(tx_curr_lag2, na.rm = TRUE),
