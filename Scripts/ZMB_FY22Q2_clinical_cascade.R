@@ -3,7 +3,7 @@
 # PURPOSE:  develop visuals for FY22Q2 review
 # LICENSE:  MIT
 # DATE:     2022-05-17
-# UPDATED:  
+# UPDATED:  2022-05-19
 
 # DEPENDENCIES ------------------------------------------------------------
 
@@ -31,9 +31,6 @@ msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
 curr_fy <- source_info(genie_path, return = "fiscal_year")
 curr_qtr <- source_info(genie_path, return = "quarter")
-
-#indicators used
-# c("HTS_TST_POS", "OVC_SERV", "PMTCT_EID", "TB_PREV", "TB_STAT", "TB_STAT_POS", "TX_CURR", "TX_CURR_Lag1", "TX_CURR_Lag2", "TX_ML", "TX_NET_NEW", "TX_NEW", "TX_PVLS", "TX_PVLS", "TX_PVLS_D")
 
 # IMPORT ------------------------------------------------------------------
 
@@ -70,6 +67,18 @@ fill_targets <- function(df, ...) {
     filter(period %ni% c("FY20", "FY21", "FY22"))
 }
 
+fix_results <- function(df) {
+  df %>% 
+    group_by(indicator) %>% 
+    mutate(tag = ifelse(indicator %in% snapshot_ind, 0, 1),
+           results = case_when(
+             tag != 0 ~ cumsum(results),
+             TRUE ~ results
+           )
+           ) %>% 
+    ungroup()
+}
+
 
 data_source <- glue("{msd_source}\n Created by: USAID OHA SI Team")
 
@@ -95,7 +104,9 @@ cascade_viz <- function(df, pop) {
       reshape_msd(direction = "semi-wide", qtrs_keep_cumulative = T) %>%
       fill_targets() %>%
       filter(trendscoarse == "<15") %>% 
-      ungroup()
+      ungroup() %>% 
+      fix_results()
+      
     
   #  return(df_cascade)
     
@@ -114,11 +125,29 @@ cascade_viz <- function(df, pop) {
       reshape_msd(direction = "semi-wide", qtrs_keep_cumulative = T) %>%
       fill_targets() %>%
       # filter(trendscoarse == "<15") %>% 
-      ungroup()
+      ungroup() %>% 
+      fix_results()
     
     #return(df_cascade)
     
   } else if (pop == "AYP") {
+    df_cascade <- df %>%
+      filter(
+        indicator %in% c("HTS_TST", "HTS_TST_POS", "TX_NEW", "TX_NET_NEW", "TX_CURR", "TX_PVLS"),
+        standardizeddisaggregate %in% c("Modality/Age/Sex/Result", "Age/Sex/HIVStatus",
+                                        "Age/Sex/Indication/HIVStatus"),
+        fiscal_year == curr_fy,
+        funding_agency == "USAID"
+      ) %>%
+      mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+             ayp = ifelse(ageasentered %in% c("15-19", "20-24"), "AYP", "Non AYP")) %>%
+      group_by(funding_agency, indicator, ayp, fiscal_year) %>%
+      summarise(across(matches("targ|qtr"), sum, na.rm = T)) %>%
+      reshape_msd(direction = "semi-wide", qtrs_keep_cumulative = T) %>%
+      fill_targets() %>%
+      filter(ayp == "AYP") %>% 
+      ungroup() %>% 
+      fix_results()
     
   }
   
@@ -181,13 +210,14 @@ cascade_viz <- function(df, pop) {
   
 }
 
+cascade_viz(df, "Peds")
+cascade_viz(df, "KP")
+cascade_viz(df, "AYP")
 
-si_save("Images/ZMB_FY22Q2_CASCADE.png")
-si_save("Images/ZMB_FY22Q2_CASCADE_KP.png")
 
-si_save("Graphics/ZMB_FY22Q2_CASCADE.svg")
+si_save("Graphics/ZMB_FY22Q2_CASCADE_peds.svg")
 si_save("Graphics/ZMB_FY22Q2_CASCADE_KP.svg")
-
+si_save("Graphics/ZMB_FY22Q2_CASCADE_AYP.svg")
 
 # df_cascade <- df_cascade %>% 
 #   mutate(
