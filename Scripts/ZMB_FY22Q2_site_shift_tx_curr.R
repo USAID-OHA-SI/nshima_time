@@ -43,7 +43,6 @@ merdata <- file.path(glamr::si_path("path_msd"), "Genie")
 file_genie <- return_latest(folderpath = merdata,
                             pattern = "Genie-SiteByIMs-Zambia-Daily-2022-05-16.zip")
 
-
 # Grab metadata
 pd <- source_info(file_genie, return = "period")
 fy <- source_info(file_genie, return = "fiscal_year")

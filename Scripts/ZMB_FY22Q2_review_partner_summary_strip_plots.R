@@ -173,7 +173,7 @@ plot_achv <- function(ptnr, export = TRUE){
 # VIZ output --------------------------------------------------------------
 
 partner_list <- df_achv_viz %>% 
-  filter(str_detect(partner, "Action|DISCOVER|SAFE")) %>% 
+  #filter(str_detect(partner, "Action|DISCOVER|SAFE")) %>% 
   distinct(partner) %>% pull()
 
 plot_achv("SAFE", export = T)
