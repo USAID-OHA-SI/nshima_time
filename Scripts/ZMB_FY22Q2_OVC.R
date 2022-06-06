@@ -81,7 +81,13 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
     filter(indicator %in% c("OVC_HIVSTAT_NEG", "OVC_HIVSTAT_POS", "OVC_HIVSTAT"), 
            standardizeddisaggregate  %in% c("Total Numerator", "Total Denominator"),
            fiscal_year == 2022) %>% 
-    group_sum(type = standardizeddisaggregate)
+    group_sum(type = standardizeddisaggregate) %>% 
+    mutate(type = case_when(
+      indicator == "OVC_HIVSTAT_NEG" ~ "OVC_HIVSTAT_NEG", 
+      indicator == "OVC_HIVSTAT_POS" ~ "OVC_HIVSTAT_POS",
+      TRUE ~ type
+    ))
+  
   
   df_tx <- 
     df %>% 
@@ -89,7 +95,8 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
            standardizeddisaggregate %in% c("Age/Sex/ARVDispense/HIVStatus"), 
            fiscal_year == curr_fy, 
            trendscoarse == "<15") %>% 
-    group_sum(type = standardizeddisaggregate)
+    group_sum(type = standardizeddisaggregate) %>% 
+    mutate(type = "TX_CURR <15")
   
   # In FY22 we no longer can determine how many are on ART for <18s
   df_ovc <- 
@@ -102,46 +109,73 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
       TRUE ~ "OVC_HIVSTAT"
       )
     ) %>% 
-    filter(x_group != "not used") %>% 
+    # Create a duplicate of 
+    mutate(count = c(1, 1, 1, 1, 1, 2, 1)) %>% 
+    uncount(count) %>% 
+    mutate(row_num = row_number(),
+           x_group = ifelse(row_num == 7, "OVC_HIVSTAT_POS", x_group),
+           x_order = fct_relevel(x_group, 
+                                 c("OVC_SERV <18\n Comprehensive Model",
+                                   "OVC_HIVSTAT", 
+                                   "TX_CURR <15", 
+                                   "OVC_HIVSTAT_POS")
+                                 ),
+           type = fct_relevel(type, 
+                              c("Test Not Required", "Undisclosed to IP",
+                                "OVC_HIVSTAT_NEG", "OVC_HIVSTAT_POS", 
+                                "Total Denominator", "TX_CURR <15", 
+                                "Total Numerator")),
+           bar_color = case_when(
+             x_order == "OVC_SERV <18\n Comprehensive Model" ~ "#30728b",
+             type == "Undisclosed to IP" ~ "#e3e2ce",
+             type == "OVC_HIVSTAT_POS" ~ "#d77389",
+             type == "OVC_HIVSTAT_NEG" ~ "#e6aab9",
+             type == "TX_CURR <15" ~ "#5cb6d6",
+             type == "Test Not Required" ~ "#ada9cd",
+            )
+          )
+  
+  
+  df_kstatus <- 
+    bind_rows(df_hivstat, df_hivstat2, df_tx) %>% 
+    select(-c("qtr1", "qtr3", "qtr4", "targets")) %>% 
+    filter(indicator %in% c("OVC_HIVSTAT", 
+                            "OVC_HIVSTAT_NEG", 
+                            "OVC_HIVSTAT_POS")) %>% 
+    slice(1, 3, 5, 6) %>% 
+    mutate(pivot_flag = ifelse(type == "Total Denominator", "den", "num")) %>% 
+    group_by(pivot_flag) %>% 
+    summarise(tot = sum(qtr2)) %>% 
+    spread(pivot_flag, tot) %>% 
+    mutate(proxy = num/den,
+           indicator = "OVC_HIVSTAT", 
+           row_num = 1)
   
   df_ovc %>% 
-    ggplot(aes(x = x_group, y = qtr2, fill = type)) +
-    geom_col()
+    filter(x_group != "not used") %>% 
+    ggplot() +
+    geom_col(aes(x = x_order, y = qtr2, fill = bar_color)) +
+    geom_text(data = . %>% inner_join(df_kstatus), 
+              aes(x = x_order, y = den, 
+                  label = paste(percent(proxy, 1), "Known Status Proxy")),
+              vjust = -0.1, 
+              size = 10/.pt, 
+              family = "Source Sans Pro") +
+    geom_text(aes(x = x_order, y = qtr2, label = comma(qtr2)))+
+    si_style_xgrid() +
+    scale_fill_identity() +
+    scale_y_continuous(labels = comma) +
+    coord_flip() +
+    scale_x_discrete(limits = rev(levels(df_ovc$x_order))) +
+    labs(x = NULL, y = NULL,
+         caption = glue("Source: {msd_source}"))
     
+
+  si_save(glue("Graphics/{curr_pd}_ZAM_OVC_CASCADE2.svg"), scale = 1.15)
   
-
-
-  df_ovc <- 
-    df %>% 
-    filter(indicator %in% c("OVC_SERV", "OVC_HIVSTAT", 
-                            "TX_CURR","OVC_HIVSTAT_NEG", 
-                            "OVC_HIVSTAT_POS"),
-           standardizeddisaggregate %in% c(,
-                                           "Age/Sex/ReportedStatus", 
-                                           "Age/Sex/DREAMS",
-                                           "Total Numerator",
-                                           "Age/Sex/Preventive",
-                                           "Reported Status"
-                                           ), 
-           otherdisaggregate()
-           fiscal_year == curr_fy) %>%
-    mutate(tag = case_when(
-      indicator %in% c("OVC_SERV", "TX_CURR") & standardizeddisaggregate == "Total Numerator" ~ 1,
-      indicator %in% c("TX_CURR") & ageasentered == "15+" ~ 1,
-      indicator %in% c("OVC_SERV") & standardizeddisaggregate == "Age/Sex/DREAMS" ~ 1,
-      TRUE ~ 0,
-    )) %>% 
-    filter(tag == 0) %>% 
-    #filter(indicator %ni% c("OVC_SERV", "TX_CURR") & standardizeddisaggregate == "Total Numerator") %>% 
-    group_by(indicator, fiscal_year, standardizeddisaggregate, 
-             otherdisaggregate, trendscoarse) %>% 
-    summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
-    prinf()
-    
-
-
-
-
+  # Fair bit of hand edits required in AI
+  
+  
 # OVC SERV BY PARTNER ------------------------------
 
 df_ovc <- df %>% 
