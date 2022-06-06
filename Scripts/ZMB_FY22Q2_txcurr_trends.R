@@ -25,7 +25,8 @@ library(lubridate)
 
 # GLOBAL VARIABLES --------------------------------------------------------
 
-genie_path <- file.path(si_path(), "Genie-PSNUByIMs-Zambia-Daily-2022-05-16_ALL.zip")
+#genie_path <- file.path(si_path(), "Genie-PSNUByIMs-Zambia-Daily-2022-05-16_ALL.zip")
+genie_path  <- file.path(si_path(), "MER_Structured_Datasets_Site_IM_FY20-22_20220513_v1_2_Zambia.zip")
 
 msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
@@ -246,7 +247,7 @@ si_save(glue("Images/{curr_pd}_ZAM_partner_txcurr_peds.png"))
 
 # IIT ---------------------------------------------------------------------
 
-genie_path_site <- file.path(si_path(), "Genie-SiteByIMs-Zambia-Daily-2022-05-16_ALL.zip")
+genie_path_site <- file.path(si_path(), "MER_Structured_Datasets_Site_IM_FY20-22_20220513_v1_2_Zambia.zip")
 df_site <- read_msd(genie_path_site)
 
 df_iit <- df_site %>% 
@@ -254,7 +255,8 @@ df_iit <- df_site %>%
          indicator %in% c("TX_ML", "TX_CURR", "TX_NEW", "TX_CURR_Lag1", "TX_RTT"),
  # count(indicator, standardizeddisaggregate) %>% view()
          standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "Age/Sex/ARTNoContactReason/HIVStatus")) %>% 
-  group_by(fiscal_year, snu1, trendscoarse, facility, facilityuid, indicator) %>% 
+  #group_by(fiscal_year, snu1, trendscoarse, facility, facilityuid, indicator) %>% 
+  group_by(fiscal_year, snu1, facility, facilityuid, indicator, mech_code, mech_name) %>% 
   summarise(across(starts_with("qtr"), sum, na.rm = TRUE), .groups = "drop") %>% 
   reshape_msd(include_type = FALSE) %>% 
   pivot_wider(names_from = "indicator",
@@ -263,8 +265,21 @@ df_iit <- df_site %>%
   mutate(iit = tx_ml / sum(tx_curr_lag1, tx_new, na.rm = TRUE)) %>% 
   ungroup()
 
+# Flag sites that have had consistent IIT from FY21Q4 - FY22Q2 -->
+# What does the distribution of tx_ml look like across sites that are
+# losing patients?
+  df_iit %>% 
+    filter(period %in% c("FY21Q4", "FY22Q1", "FY22Q2"),
+           str_detect(snu1, "Central|Copperbelt")) %>% 
+    group_by(facility) %>% 
+    mutate(iit_flag = ifelse(iit > .05, 1, 0),
+           tot_iit = sum(iit_flag, na.rm = T)) %>% 
+    filter(tot_iit == 2) %>% 
+    write_csv("Dataout/ZMB_high_IIT_sites_Central_Copperbelt.csv")
+
+
 df_iit %>% 
-  filter(snu1 %in% v_tx_lrg,
+  filter(snu1 %in% c,
          tx_curr_lag1 != 0,
          trendscoarse == "<15") %>% 
   mutate(snu1 = factor(snu1, v_tx_lrg)) %>% 

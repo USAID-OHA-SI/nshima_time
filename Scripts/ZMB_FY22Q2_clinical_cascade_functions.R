@@ -31,10 +31,14 @@ msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
 curr_fy <- source_info(genie_path, return = "fiscal_year")
 curr_qtr <- source_info(genie_path, return = "quarter")
+plot_name <- glue::glue("{msd_source}\n Created by: USAID OHA SI Team")
+
+df <- read_msd(genie_path)
+
 
 # IMPORT ------------------------------------------------------------------
 
-df <- read_msd(genie_path)
+
 
 # PERIODS -----------------------------------------------------------------
 

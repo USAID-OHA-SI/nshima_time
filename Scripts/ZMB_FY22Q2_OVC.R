@@ -25,7 +25,7 @@ library(lubridate)
 
 # GLOBAL VARIABLES --------------------------------------------------------
 
-genie_path <- file.path(si_path(), "Genie-PSNUByIMs-Zambia-Daily-2022-05-16_ALL.zip")
+genie_path <- return_latest(si_path(), "OU_IM_FY20-22_20220513_v1_2")
 
 msd_source <- source_info(genie_path)
 curr_pd <- source_info(genie_path, return = "period")
@@ -37,7 +37,7 @@ curr_qtr <- source_info(genie_path, return = "quarter")
 
 # IMPORT ------------------------------------------------------------------
 
-df <- read_msd(genie_path)
+df <- read_msd(genie_path) %>% filter(operatingunit == "Zambia")
 
 full_pds <- (min(df$fiscal_year) - 1) %>% 
   paste0("-10-01") %>% 
@@ -47,12 +47,100 @@ full_pds <- (min(df$fiscal_year) - 1) %>%
 
 pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
 
-swap_targets <- function(.data, mech1 = "18304", mech2 = "82075") {
-  # Using EQUIP as default as this has to be done each time in FY21
-  .data %>%
-    mutate(mech_code = ifelse(mech_code == {{mech1}}, {{mech2}}, mech_code),
-           mech_name = ifelse(mech_code == {{mech2}}, "Action HIV", mech_name))
-}
+# swap_targets <- function(.data, mech1 = "18304", mech2 = "82075") {
+#   # Using EQUIP as default as this has to be done each time in FY21
+#   .data %>%
+#     mutate(mech_code = ifelse(mech_code == {{mech1}}, {{mech2}}, mech_code),
+#            mech_name = ifelse(mech_code == {{mech2}}, "Action HIV", mech_name))
+# }
+
+
+  # Function to group and sum
+  group_sum <- function(.data, ...){
+    .data %>% 
+      group_by(indicator, fiscal_year, ...) %>% 
+      summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop")
+  }
+
+# REQUEST FOR OVC CASCADE -------------------------------------------------
+
+  df %>% filter(str_detect(indicator, c("OVC_HIVSTAT")), fiscal_year == 2022) %>% 
+  count(standardizeddisaggregate, otherdisaggregate,  indicator, fiscal_year) %>% prinf()
+
+# First get OVC_HIVSTAT b/c it's a PITA
+  df_hivstat <- 
+    df %>% 
+    filter(indicator %in% c("OVC_HIVSTAT"), 
+           standardizeddisaggregate  %in% c("Age/Sex/ReportedStatus"),
+           !is.na(otherdisaggregate)) %>% 
+    group_sum(type = otherdisaggregate)
+    
+  
+  df_hivstat2 <- 
+    df %>% 
+    filter(indicator %in% c("OVC_HIVSTAT_NEG", "OVC_HIVSTAT_POS", "OVC_HIVSTAT"), 
+           standardizeddisaggregate  %in% c("Total Numerator", "Total Denominator"),
+           fiscal_year == 2022) %>% 
+    group_sum(type = standardizeddisaggregate)
+  
+  df_tx <- 
+    df %>% 
+    filter(indicator %in% c("TX_CURR"), 
+           standardizeddisaggregate %in% c("Age/Sex/ARVDispense/HIVStatus"), 
+           fiscal_year == curr_fy, 
+           trendscoarse == "<15") %>% 
+    group_sum(type = standardizeddisaggregate)
+  
+  # In FY22 we no longer can determine how many are on ART for <18s
+  df_ovc <- 
+    bind_rows(df_hivstat, df_hivstat2, df_tx) %>% 
+    select(-c("qtr1", "qtr3", "qtr4")) %>% 
+    mutate(x_group = case_when(
+      indicator == "OVC_HIVSTAT" & type == "Total Denominator" ~ "OVC_SERV <18\n Comprehensive Model",
+      indicator == "TX_CURR" ~ "TX_CURR <15",
+      indicator == "OVC_HIVSTAT" & type == "Total Numerator" ~ "not used",
+      TRUE ~ "OVC_HIVSTAT"
+      )
+    ) %>% 
+    filter(x_group != "not used") %>% 
+  
+  df_ovc %>% 
+    ggplot(aes(x = x_group, y = qtr2, fill = type)) +
+    geom_col()
+    
+  
+
+
+  df_ovc <- 
+    df %>% 
+    filter(indicator %in% c("OVC_SERV", "OVC_HIVSTAT", 
+                            "TX_CURR","OVC_HIVSTAT_NEG", 
+                            "OVC_HIVSTAT_POS"),
+           standardizeddisaggregate %in% c(,
+                                           "Age/Sex/ReportedStatus", 
+                                           "Age/Sex/DREAMS",
+                                           "Total Numerator",
+                                           "Age/Sex/Preventive",
+                                           "Reported Status"
+                                           ), 
+           otherdisaggregate()
+           fiscal_year == curr_fy) %>%
+    mutate(tag = case_when(
+      indicator %in% c("OVC_SERV", "TX_CURR") & standardizeddisaggregate == "Total Numerator" ~ 1,
+      indicator %in% c("TX_CURR") & ageasentered == "15+" ~ 1,
+      indicator %in% c("OVC_SERV") & standardizeddisaggregate == "Age/Sex/DREAMS" ~ 1,
+      TRUE ~ 0,
+    )) %>% 
+    filter(tag == 0) %>% 
+    #filter(indicator %ni% c("OVC_SERV", "TX_CURR") & standardizeddisaggregate == "Total Numerator") %>% 
+    group_by(indicator, fiscal_year, standardizeddisaggregate, 
+             otherdisaggregate, trendscoarse) %>% 
+    summarise(across(c(targets, starts_with("qtr")), sum, na.rm = TRUE), .groups = "drop") %>% 
+    prinf()
+    
+
+
+
 
 # OVC SERV BY PARTNER ------------------------------
 
