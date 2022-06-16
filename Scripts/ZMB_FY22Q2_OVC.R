@@ -3,7 +3,7 @@
 # PURPOSE:  develop OVC visuals for FY22Q2 review
 # LICENSE:  MIT
 # DATE:     2022-05-17
-# UPDATED:  
+# UPDATED:  2022-06-16
 
 # DEPENDENCIES ------------------------------------------------------------
 
@@ -65,7 +65,16 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
 # REQUEST FOR OVC CASCADE -------------------------------------------------
 
   df %>% filter(str_detect(indicator, c("OVC_HIVSTAT")), fiscal_year == 2022) %>% 
-  count(standardizeddisaggregate, otherdisaggregate,  indicator, fiscal_year) %>% prinf()
+   # str()
+  count(standardizeddisaggregate,categoryoptioncomboname, indicator, fiscal_year) %>% prinf()
+  
+  df_art <-  df %>% 
+    filter(indicator %in% c("OVC_HIVSTAT"), 
+           standardizeddisaggregate  %in% c("Age/Sex/ReportedStatus")) %>% 
+    separate(categoryoptioncomboname, sep = ", ", into = c("age", "sex", "art_status")) %>% 
+    #count(art_status)
+    group_sum(type = art_status) %>% 
+    filter(type %in% c("Receiving ART Positive"))
 
 # First get OVC_HIVSTAT b/c it's a PITA
   df_hivstat <- 
@@ -100,17 +109,19 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
   
   # In FY22 we no longer can determine how many are on ART for <18s
   df_ovc <- 
-    bind_rows(df_hivstat, df_hivstat2, df_tx) %>% 
+    bind_rows(df_hivstat, df_hivstat2, df_tx, df_art) %>% 
     select(-c("qtr1", "qtr3", "qtr4")) %>% 
     mutate(x_group = case_when(
       indicator == "OVC_HIVSTAT" & type == "Total Denominator" ~ "OVC_SERV <18\n Comprehensive Model",
       indicator == "TX_CURR" ~ "TX_CURR <15",
+      indicator == "OVC_HIVSTAT" & type == "Undisclosed to IP" ~ "OVC_HIVSTAT\n Undisclosed",
+      indicator == "OVC_HIVSTAT" & type == "Receiving ART Positive" ~ "OVC_HIVSTAT\n Receiving ART",
       indicator == "OVC_HIVSTAT" & type == "Total Numerator" ~ "not used",
       TRUE ~ "OVC_HIVSTAT"
       )
     ) %>% 
     # Create a duplicate of 
-    mutate(count = c(1, 1, 1, 1, 1, 2, 1)) %>% 
+    mutate(count = c(1, 1, 1, 1, 1, 2, 1, 1)) %>% 
     uncount(count) %>% 
     mutate(row_num = row_number(),
            x_group = ifelse(row_num == 7, "OVC_HIVSTAT_POS", x_group),
@@ -118,7 +129,8 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
                                  c("OVC_SERV <18\n Comprehensive Model",
                                    "OVC_HIVSTAT", 
                                    "TX_CURR <15", 
-                                   "OVC_HIVSTAT_POS")
+                                   "OVC_HIVSTAT_POS",
+                                   "OVC_HIVSTAT\n Receiving ART")
                                  ),
            type = fct_relevel(type, 
                               c("Test Not Required", "Undisclosed to IP",
@@ -132,6 +144,7 @@ pd_brks <- str_replace(full_pds, "FY.*(1|3)$", "")
              type == "OVC_HIVSTAT_NEG" ~ "#e6aab9",
              type == "TX_CURR <15" ~ "#5cb6d6",
              type == "Test Not Required" ~ "#ada9cd",
+             type == "Receiving ART Positive" ~ "#e9ddff"
             )
           )
   
