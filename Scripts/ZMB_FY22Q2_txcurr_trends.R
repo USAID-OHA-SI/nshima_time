@@ -252,11 +252,11 @@ df_site <- read_msd(genie_path_site)
 
 df_iit <- df_site %>% 
   filter(funding_agency == "USAID",
-         indicator %in% c("TX_ML", "TX_CURR", "TX_NEW", "TX_CURR_Lag1", "TX_RTT"),
- # count(indicator, standardizeddisaggregate) %>% view()
+         indicator %in% c("TX_ML", "TX_CURR", "TX_NEW", "TX_CURR_Lag1", "TX_RTT"), 
+  #count(indicator, standardizeddisaggregate) %>% view()
          standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "Age/Sex/ARTNoContactReason/HIVStatus")) %>% 
   #group_by(fiscal_year, snu1, trendscoarse, facility, facilityuid, indicator) %>% 
-  group_by(fiscal_year, snu1, facility, facilityuid, indicator, mech_code, mech_name) %>% 
+  group_by(fiscal_year, snu1, facility, facilityuid, indicator, mech_code, mech_name, psnu) %>% 
   summarise(across(starts_with("qtr"), sum, na.rm = TRUE), .groups = "drop") %>% 
   reshape_msd(include_type = FALSE) %>% 
   pivot_wider(names_from = "indicator",
@@ -265,16 +265,42 @@ df_iit <- df_site %>%
   mutate(iit = tx_ml / sum(tx_curr_lag1, tx_new, na.rm = TRUE)) %>% 
   ungroup()
 
+
+# Need to get a distinct list of facilities with OVC programs (mech codes will not match).
+# Collapse the ovc_serv #s down to the facility level. 
+df_ovc_site <- 
+  df_site %>% 
+  filter(funding_agency == "USAID",
+         indicator %in% c("OVC_SERV"), 
+         standardizeddisaggregate == "Total Numerator") %>% 
+group_by(fiscal_year, snu1, facility, facilityuid, indicator, psnu) %>% 
+  summarise(across(starts_with("qtr"), sum, na.rm = TRUE), .groups = "drop") %>% 
+  reshape_msd(include_type = FALSE) %>% 
+  pivot_wider(names_from = "indicator",
+              names_glue = "{tolower(indicator)}") %>% 
+  group_by(facility) %>% 
+  mutate(ovc_facility = ifelse(ovc_serv>0, 1, NA_integer_),
+         fy = substr(period, 3, 4)) %>% 
+  group_by(facility, fy) %>% 
+  fill(ovc_facility, .direction = "updown") %>% 
+  ungroup() %>% 
+  filter(facility != "Data reported above Facility level") %>% 
+  select(period, facilityuid, ovc_facility, ovc_serv) %>% 
+  filter(period %in% c("FY21Q4", "FY22Q1", "FY22Q2"))
+  
+
 # Flag sites that have had consistent IIT from FY21Q4 - FY22Q2 -->
 # What does the distribution of tx_ml look like across sites that are
 # losing patients?
   df_iit %>% 
     filter(period %in% c("FY21Q4", "FY22Q1", "FY22Q2"),
            str_detect(snu1, "Central|Copperbelt")) %>% 
-    group_by(facility) %>% 
+    group_by(facility, snu1, mech_code) %>% 
     mutate(iit_flag = ifelse(iit > .05, 1, 0),
            tot_iit = sum(iit_flag, na.rm = T)) %>% 
-    filter(tot_iit == 2) %>% 
+    ungroup() %>% 
+    filter(tot_iit >= 2) %>% 
+    left_join(., df_ovc_site) %>% 
     write_csv("Dataout/ZMB_high_IIT_sites_Central_Copperbelt.csv")
 
 
