@@ -13,13 +13,16 @@
     library(tidyverse)
     library(gt)
     library(selfdestructin5)
+    library(gtExtras)
     
     
   # SI specific paths/functions  
     load_secrets()
     merdata <- file.path(glamr::si_path("path_msd"))
-    file_path <- return_latest(folderpath = merdata,
-                               pattern = "Zambia-Daily-2022-08-15")
+    # file_path <- return_latest(folderpath = merdata,
+    #                            pattern = "Zambia-Daily-2022-08-15")
+    file_path <- return_latest(folderpath = merdata, 
+                               pattern = "PSNU_IM_FY20-23_20220812")
       
   # Grab metadata
    msd_source <- source_info(file_path)
@@ -113,6 +116,60 @@
     mk_ptr_tbl(psnu_im, 17413)
     mk_ptr_tbl(psnu_im %>% 
                  mutate(mech_name = ifelse(str_detect(mech_name, "DISCOVER-H"), "DISCOVER-H", mech_name)), 17399)
+ 
+    
+
+# ADD CUSTOM TABLE FOR ZAMHEALTH ------------------------------------------
+
+       
+    mk_ptr_tbl(psnu_im, 82086)
     
     
-             
+    ip_mdb <- 
+      psnu_im %>% 
+      filter(mech_code == 82086) %>% 
+      make_mdb_df() %>% 
+      filter(fiscal_year == fy, operatingunit == "Global") %>% 
+      select(agency, indicator, indicator_plain, qtr1, qtr2, qtr3, cumulative, targets) %>% 
+      mutate(achv = cumulative / targets)
+    
+    ip_mdb %>% 
+      gt(groupname_col ="agency") %>% 
+      gt_merge_stack(col1 = indicator, col2 = indicator_plain,
+                     palette = c(grey90k, grey80k),
+                     font_size = c("12px", "11px"),
+                     font_weight = c("normal", "normal")) %>% 
+      cols_align(columns = 2, 
+                 align = c("left")) %>% 
+      cols_label(
+        indicator = ""
+      ) %>% 
+      fmt_number(
+        columns = 4:8, 
+        decimals = 0
+      ) %>% 
+      fmt_percent(
+        columns = 9,
+        decimals = 0
+      ) %>% 
+      tab_header(title = md("Zambia Accessible Markets for Health Performance Summary")) %>% 
+      tab_source_note(
+        source_note = gt::md(glue::glue("**Source**: {authors_footnote(msd_source)} | si.coreanalytics@usaid.gov"))
+      ) %>% 
+      gt::tab_style(
+        style = list("font-variant: small-caps;"),
+        locations = gt::cells_column_labels(columns = tidyselect::everything())
+      ) %>% 
+      tab_options(
+        source_notes.font.size = 8,
+        source_notes.padding = px(1),
+        data_row.padding = px(5),
+        table.font.size = 13
+      ) %>% 
+      tab_spanner(
+        label = glue::glue("FY22 Summary"),
+        columns = 4:9
+      ) %>% 
+      gtsave(path = "Images", filename = glue::glue("ZamHealth_mdb_main.png"))
+      
+    

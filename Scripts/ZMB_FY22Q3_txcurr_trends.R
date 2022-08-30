@@ -319,6 +319,25 @@
       select(period, facilityuid, ovc_facility, ovc_serv) %>% 
       filter(period %in% c("FY21Q4", "FY22Q1", "FY22Q2", pd))
     
+    # FOLDING IN OTHER INDICATORS THAT WERE REQUESTED
+    # HTS_TST_POS and VLC
+    df_site_hts <- 
+      df_site %>% 
+      filter(funding_agency == "USAID",
+             indicator %in% c("HTS_TST", "HTS_TST_POS", "TX_PVLS", "TX_CURR_Lag2"),
+             standardizeddisaggregate %in% c("Age/Sex/Indication/HIVStatus", "Age/Sex/HIVStatus", "Modality/Age/Sex/Result")) %>% 
+      clean_indicator() %>% 
+      filter(indicator != "TX_PVLS") %>%
+      group_by(fiscal_year, snu1, trendscoarse, facility, facilityuid, indicator, mech_code) %>% 
+      #group_by(fiscal_year, snu1, facility, facilityuid, indicator, mech_code, mech_name, psnu) %>% 
+      summarise(across(starts_with("qtr"), sum, na.rm = TRUE), .groups = "drop") %>%
+      reshape_msd(include_type = FALSE) %>% 
+      pivot_wider(names_from = "indicator",
+                  names_glue = "{tolower(indicator)}") %>% 
+      filter(period %in% c("FY21Q4", "FY22Q1", "FY22Q2", pd)) %>% 
+      mutate(positivity = hts_tst_pos / hts_tst, .after = hts_tst_pos) %>% 
+      mutate(vlc = tx_pvls_d / tx_curr_lag2, .after = tx_pvls_d)
+             
     
     # Flag sites that have had consistent IIT from FY21Q4 - FY22Q2 -->
     # What does the distribution of tx_ml look like across sites that are
@@ -331,6 +350,7 @@
              tot_iit = sum(iit_flag, na.rm = T)) %>% 
       ungroup() %>% 
       filter(tot_iit >= 2) %>% 
+      left_join(., df_site_hts) %>% 
       left_join(., df_ovc_site) %>% 
       write_csv(glue::glue("Dataout/{pd}_ZMB_high_IIT_sites_Central_Copperbelt.csv"), na = "")
     
