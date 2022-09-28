@@ -31,6 +31,10 @@
     
   # Functions  
   
+  #TODO: Clean up function, make mini functions and helpers for longer term use
+  #TODO: Check on format of table, how can it be cleaned up a bit?
+  #TODO: Optimize layout of table so it fills a slide
+  #TODO: figure out syntax for selecting across columns where a value is negative
 
 # LOAD DATA ============================================================================  
 
