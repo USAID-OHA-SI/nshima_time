@@ -42,6 +42,14 @@
 
 # MUNGE ============================================================================
   
+  # Reshape to export to Tableau for a mock up
+    bobs %>% 
+      pivot_longer(cols = Sep:Aug,
+                   names_to = "Month") %>% 
+      filter(Indicator != "IIT") %>% 
+      write_csv("Dataout/Bobs_sample.csv")
+    
+    
   bobs_sub <- 
       bobs %>% 
       filter(str_detect(Indicator, "TX_PVLS|IIT", negate = T)) %>% 

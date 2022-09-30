@@ -14,6 +14,8 @@
     library(cascade)
     library(scales)
     library(extrafont)
+    library(gt)
+    library(gtExtras)
     
     
   # SI specific paths/functions  
@@ -34,6 +36,20 @@
     ref_id <- "c3274783"
     
   # Functions  
+  summarise_targets <- function(df, ...) {
+    df %>% 
+      group_by(snu1, fiscal_year, ...) %>% 
+      summarise(targets = sum(targets, na.rm = T)) %>% 
+      group_by(snu1, ...) %>% 
+      mutate(growth = (targets/lag(targets, n = 1)) - 1) %>% 
+      ungroup() %>% 
+      mutate(snu_order = fct_reorder(snu1, targets, .desc = T),
+             flag = case_when(
+               str_detect(snu1, "NorthWestern") & fiscal_year == max(fiscal_year) ~ 1,
+               TRUE ~ 0
+             )
+      )
+  }
   
 
 # LOAD DATA ============================================================================  
@@ -53,28 +69,188 @@
     clean_psnu()
   
 
-  
+# ASKED FOR A COMPARISON OF PROV TARGET COV -------------------------------
 
-# SHOW THE GROWTH OF TX_CURR TARGETS --------------------------------------
-  
   # What does overall target growth look like by province?
   subnat_snu <- 
     subnat %>% 
-    filter(fiscal_year > 2019,
+    filter(fiscal_year > 2020,
            indicator %in% c("TX_CURR_SUBNAT"),
            standardizeddisaggregate == "Age/Sex/HIVStatus") %>% 
-    group_by(snu1, fiscal_year) %>% 
-    summarise(targets = sum(targets, na.rm = T)) %>% 
-    group_by(snu1) %>% 
-    mutate(growth = (targets/lag(targets, n = 1)) - 1) %>% 
-    ungroup() %>% 
-    mutate(snu_order = fct_reorder(snu1, targets, .desc = T),
-           flag = case_when(
-             str_detect(snu1, "NorthWestern") & fiscal_year == max(fiscal_year) ~ 1,
-             TRUE ~ 0
-           )
-          )
+    summarise_targets()
+  
+  # What does USAID Targets from MSD look like?
+  tx_tgt_subnat <- psnu_im %>% 
+    mutate(snu1 = gsub(" Province", "", snu1)) %>% 
+    clean_psnu() %>% 
+    filter(fiscal_year > 2020,
+           indicator == "TX_CURR", 
+           standardizeddisaggregate == "Total Numerator",
+           str_detect(snu1, "Military", negate = T)) %>% 
+    summarise_targets() %>% 
+    rename(tx_targets = targets, tx_growth = growth)
     
+  tx_combo <- subnat_snu %>% 
+    left_join(tx_tgt_subnat) %>% 
+    mutate(gap = targets - tx_targets,
+           pepfar_cov = tx_targets/targets)
+    
+  tx_snu_combo_base <- 
+    tx_combo %>% 
+    select(snu1, fiscal_year, TX_CURR_SUBNAT = targets, PEPFAR_TARGETS = tx_targets, 
+           GAP = gap, COVERAGE = pepfar_cov) 
+  
+  tx_snu_combo_list <- 
+    tx_snu_combo_base %>% 
+    group_by(snu1) %>% 
+    summarize(TX_CURR_SUBNAT = list(TX_CURR_SUBNAT), 
+              PEPFAR_TARGETS = list(PEPFAR_TARGETS),
+              GAP = list(GAP),
+              COVERAGE = list(COVERAGE)) %>% 
+    pivot_longer(TX_CURR_SUBNAT:COVERAGE) %>% 
+    mutate(name = fct_relevel(name, c("PEPFAR_TARGETS", "TX_CURR_SUBNAT", "GAP", "COVERAGE"))) %>% 
+    arrange(name)
+  
+  tx_snu_combo_base %>% 
+    pivot_longer(TX_CURR_SUBNAT:COVERAGE) %>% 
+    spread(fiscal_year, value) %>% 
+    mutate(name = fct_relevel(name, c("PEPFAR_TARGETS", "TX_CURR_SUBNAT", "GAP", "COVERAGE"))) %>% 
+    arrange(name) %>% 
+    left_join(tx_snu_combo_list) %>% 
+    filter(snu1 %in% c("NorthWestern")) %>% 
+    gt(groupname_col = "snu1") %>% 
+    gt_plt_sparkline(value, same_limit = F, type = "shaded", 
+                     fig_dim = c(3, 30),
+                     palette = c(grey70k, grey90k, old_rose_light, scooter_med, grey10k),
+                     label = F) %>% 
+    fmt_number(columns = is.numeric,
+               rows = name %ni% "COVERAGE",
+               decimals = 0) %>% 
+    fmt_percent(columns = is.numeric,
+                rows = name %in% "COVERAGE",
+                decimals = 0) %>% 
+    cols_align(name,
+               align = "left") %>% 
+    cols_label(name = "", 
+               value = "") %>% 
+    tab_style(
+      style = list(
+        cell_text(weight = 620)
+      ),
+      locations = cells_body(
+        rows = name == "GAP"
+      )
+    ) %>% 
+    tab_header(title = "NORTHWESTERN PROVINCE TREATMENT COVERAGE COP21-23") %>% 
+  gtsave(., "Images/NWPROV_TX_CURR_SUBNAT_summary.png")
+  
+
+# REDO WITH PSNUS INFO ----------------------------------------------------
+
+  
+  # REDO ALL THIS FOR ALL PSNUS in NW
+  # TABLE WILL GET COMPRESSED
+    
+  # What does overall target growth look like by province?
+  subnat_psnu <- 
+    subnat %>% 
+    filter(fiscal_year > 2020,
+           indicator %in% c("TX_CURR_SUBNAT"),
+           standardizeddisaggregate == "Age/Sex/HIVStatus",
+           snu1 == "NorthWestern") %>% 
+    summarise_targets(psnu)
+  
+  # What does USAID Targets from MSD look like?
+  tx_tgt_psnu <- psnu_im %>% 
+    mutate(snu1 = gsub(" Province", "", snu1)) %>% 
+    clean_psnu() %>% 
+    filter(fiscal_year > 2020,
+           indicator == "TX_CURR", 
+           standardizeddisaggregate == "Total Numerator",
+           snu1 == "NorthWestern") %>% 
+    summarise_targets(psnu) %>% 
+    rename(tx_targets = targets, tx_growth = growth) %>% 
+    complete(psnu, fiscal_year)
+  
+  tx_combo_psnu <- subnat_psnu %>% 
+    left_join(tx_tgt_psnu) %>% 
+    mutate(gap = targets - tx_targets,
+           pepfar_cov = tx_targets/targets)
+  
+  
+  tx_snu_combo_psnu_base <- 
+    tx_combo_psnu %>% 
+    select(psnu, fiscal_year, TX_CURR_SUBNAT = targets, PEPFAR_TARGETS = tx_targets, 
+           GAP = gap, COVERAGE = pepfar_cov) 
+  
+  tx_snu_combo_list <- 
+    tx_snu_combo_psnu_base %>% 
+    group_by(psnu) %>% 
+    summarize(TX_CURR_SUBNAT = list(TX_CURR_SUBNAT), 
+              PEPFAR_TARGETS = list(PEPFAR_TARGETS),
+              GAP = list(GAP),
+              COVERAGE = list(COVERAGE)) %>% 
+    pivot_longer(TX_CURR_SUBNAT:COVERAGE) %>% 
+    mutate(name = fct_relevel(name, c("PEPFAR_TARGETS", "TX_CURR_SUBNAT", "GAP", "COVERAGE"))) %>% 
+    arrange(name)
+  
+  
+# Pull out psnu list
+  psnus <- subnat_psnu %>% distinct(psnu) %>% 
+    filter(psnu %ni% c("Kabompo", "Kasempa", "Manyinga")) %>% 
+             pull()
+  # So, a few PSNUs do not have FY23 targets
+  # Kabompo, Kasempa, Manyinga, 
+  
+  tx_snu_combo_psnu_base %>% 
+    pivot_longer(TX_CURR_SUBNAT:COVERAGE) %>% 
+    spread(fiscal_year, value) %>% 
+    mutate(name = fct_relevel(name, c("PEPFAR_TARGETS", "TX_CURR_SUBNAT", "GAP", "COVERAGE"))) %>% 
+    arrange(name) %>%
+    mutate(`FY23 % Growth` = case_when(
+      name %ni% c("COVERAGE", "GAP") ~ (`2023`/`2022`) - 1, 
+      TRUE ~ NA_real_)
+    ) %>% 
+    filter(psnu %in% psnus[1:4]) %>% 
+    gt(groupname_col = "psnu") %>% 
+    fmt_number(columns = 3:5,
+               rows = name %ni% "COVERAGE",
+               decimals = 0) %>% 
+    fmt_percent(columns = 3:5,
+                rows = name %in% "COVERAGE",
+                decimals = 0) %>% 
+    fmt_percent(columns = 6,
+                decimals = 0) %>% 
+    sub_missing(
+                missing_text = "-") %>% 
+    cols_align(name,
+               align = "left") %>% 
+    cols_label(name = "") %>% 
+    tab_style(
+      style = list(
+        cell_text(weight = 620)
+      ),
+      locations = cells_body(
+        rows = name == "GAP"
+      )
+    ) %>%
+    tab_style(
+          style = list(
+           cell_text(weight = 600)
+          ),
+          locations = cells_row_groups(groups = everything())
+      ) %>% 
+    tab_header(title = "NORTHWESTERN PROVINCE DISTRICT ") %>% 
+    #tab_header(title = "TREATMENT COVERAGE COP21-23    ") %>% 
+    tab_options(table.font.size = 10,
+                row_group.padding = 0,
+                data_row.padding = 1) %>% 
+    gtsave(., "Images/NWPROV_TX_CURR_SUBNAT_psnu0_summary.png")
+
+# SHOW THE GROWTH OF TX_CURR TARGETS --------------------------------------
+  
+
+  
     subnat_snu %>% 
     ggplot(aes(x = factor(fiscal_year), y = targets)) +
     geom_col(fill = grey50k) +
@@ -126,8 +302,10 @@
          subtitle = "Percentage change in targets from previous year listed above target level")
   
   si_save("Images/ZMB_TX_CURR_SUBNAT_target_growth_NW_age_sex.png", scale = 1.25)
-  
   # BASIC HEAT MAP OF USAID COVERAGE by PSNU in NWPROV
+
+# COVERAGE for USAID ------------------------------------------------------
+
 
   usaid_cov_nw <- psnu_im %>% 
     filter(snu1 == "NorthWestern Province", 
